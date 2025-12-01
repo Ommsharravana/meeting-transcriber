@@ -1,12 +1,22 @@
 'use client';
 
-import { AudioLines, Settings, Github } from 'lucide-react';
+import { AudioLines, Settings, Github, LogOut, User } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { SettingsDialog } from '@/components/settings/SettingsDialog';
 import { useState } from 'react';
+import { useSession, signOut } from 'next-auth/react';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 
 export function Header() {
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const { data: session } = useSession();
 
   return (
     <>
@@ -40,7 +50,7 @@ export function Header() {
                 asChild
               >
                 <a
-                  href="https://github.com"
+                  href="https://github.com/Ommsharravana/meeting-transcriber"
                   target="_blank"
                   rel="noopener noreferrer"
                   aria-label="View project on GitHub"
@@ -57,6 +67,42 @@ export function Header() {
               >
                 <Settings className="w-5 h-5" aria-hidden="true" />
               </Button>
+
+              {/* User Menu */}
+              {session?.user && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="relative"
+                      aria-label="User menu"
+                    >
+                      <div className="w-8 h-8 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white text-sm font-medium">
+                        {session.user.name?.[0]?.toUpperCase() || session.user.email?.[0]?.toUpperCase() || 'U'}
+                      </div>
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-56">
+                    <DropdownMenuLabel>
+                      <div className="flex flex-col">
+                        <span className="font-medium">{session.user.name || 'User'}</span>
+                        <span className="text-xs text-muted-foreground truncate">
+                          {session.user.email}
+                        </span>
+                      </div>
+                    </DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      onClick={() => signOut({ callbackUrl: '/login' })}
+                      className="text-red-500 focus:text-red-500 cursor-pointer"
+                    >
+                      <LogOut className="w-4 h-4 mr-2" />
+                      Sign out
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
             </div>
           </div>
         </div>

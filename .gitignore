@@ -49,3 +49,6 @@ next-env.d.ts
 # local tracking files
 features.json
 progress.txt
+
+# auth data
+/data
