@@ -1,65 +1,170 @@
-import Image from "next/image";
+'use client';
+
+import { useEffect, useRef } from 'react';
+import { Header } from '@/components/layout/Header';
+import { FileDropzone } from '@/components/upload/FileDropzone';
+import { AudioRecorder } from '@/components/recording/AudioRecorder';
+import { ModelSelector } from '@/components/model/ModelSelector';
+import { ProcessingStatus } from '@/components/processing/ProcessingStatus';
+import { TranscriptView } from '@/components/transcript/TranscriptView';
+import { HistorySidebar } from '@/components/history/HistorySidebar';
+import { useTranscriptionStore } from '@/store/transcriptionStore';
+import { useApiKey } from '@/hooks/useApiKey';
+import { useTranscriptHistory } from '@/hooks/useTranscriptHistory';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Upload, Mic, AlertCircle, Radio } from 'lucide-react';
+import { Transcript } from '@/types/transcription';
+import { RealtimeAudioRecorder } from '@/components/recording/RealtimeAudioRecorder';
 
 export default function Home() {
+  const { transcript, status, setTranscript } = useTranscriptionStore();
+  const { apiKey, apiKeys } = useApiKey();
+  const { history, isLoading: historyLoading, save, remove, clearAll, refresh } = useTranscriptHistory();
+  const lastSavedId = useRef<string | null>(null);
+
+  // Auto-save transcript when it changes and is complete
+  useEffect(() => {
+    if (transcript && status === 'complete' && transcript.id !== lastSavedId.current) {
+      lastSavedId.current = transcript.id;
+      save(transcript).catch(console.error);
+    }
+  }, [transcript, status, save]);
+
+  // Handle selecting a transcript from history
+  const handleSelectFromHistory = (selectedTranscript: Transcript) => {
+    setTranscript(selectedTranscript);
+  };
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <div className="min-h-screen flex flex-col">
+      <Header />
+
+      <div className="flex-1 flex pt-16">
+        {/* History Sidebar - only show when API key is set */}
+        {apiKey && (
+          <HistorySidebar
+            history={history}
+            isLoading={historyLoading}
+            onSelect={handleSelectFromHistory}
+            onDelete={remove}
+            onClearAll={clearAll}
+            currentTranscriptId={transcript?.id}
+          />
+        )}
+
+        <main id="main-content" className="flex-1 container mx-auto px-4 py-6 max-w-7xl" role="main" aria-label="Main content">
+          {!apiKey ? (
+            // No API Key State
+            <div className="flex items-center justify-center min-h-[60vh]">
+              <Card className="max-w-md w-full">
+                <CardHeader className="text-center">
+                  <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mx-auto mb-4">
+                    <AlertCircle className="w-8 h-8 text-primary" />
+                  </div>
+                  <CardTitle>API Key Required</CardTitle>
+                  <CardDescription>
+                    Add your OpenAI API key in settings to start transcribing audio files.
+                  </CardDescription>
+                </CardHeader>
+                <CardContent className="text-center text-sm text-muted-foreground">
+                  <p>Click the settings icon in the header to add your key.</p>
+                  <p className="mt-2">Your key is stored locally and never sent to our servers.</p>
+                </CardContent>
+              </Card>
+            </div>
+          ) : transcript ? (
+            // Transcript View
+            <div className="h-[calc(100vh-8rem)]">
+              <TranscriptView />
+            </div>
+          ) : (
+            // Upload/Recording View
+            <div className="grid lg:grid-cols-3 gap-6">
+              {/* Left Column - Input */}
+              <div className="lg:col-span-2 space-y-6">
+                <Tabs defaultValue="upload" className="w-full">
+                  <TabsList className="grid w-full grid-cols-3 mb-6">
+                    <TabsTrigger value="upload" className="gap-2">
+                      <Upload className="w-4 h-4" aria-hidden="true" />
+                      Upload File
+                    </TabsTrigger>
+                    <TabsTrigger value="record" className="gap-2">
+                      <Mic className="w-4 h-4" aria-hidden="true" />
+                      Record
+                    </TabsTrigger>
+                    <TabsTrigger value="realtime" className="gap-2">
+                      <Radio className="w-4 h-4" aria-hidden="true" />
+                      Live Transcribe
+                    </TabsTrigger>
+                  </TabsList>
+
+                  <TabsContent value="upload" className="mt-0">
+                    <FileDropzone />
+                  </TabsContent>
+
+                  <TabsContent value="record" className="mt-0">
+                    <AudioRecorder />
+                  </TabsContent>
+
+                  <TabsContent value="realtime" className="mt-0">
+                    <RealtimeAudioRecorder
+                      apiKey={apiKeys?.elevenlabs || ''}
+                      provider="elevenlabs"
+                    />
+                  </TabsContent>
+                </Tabs>
+
+                {/* Processing Status */}
+                <ProcessingStatus />
+              </div>
+
+              {/* Right Column - Settings */}
+              <div className="space-y-6">
+                <Card>
+                  <CardHeader>
+                    <CardTitle className="text-lg">Transcription Settings</CardTitle>
+                    <CardDescription>
+                      Choose model and configure options
+                    </CardDescription>
+                  </CardHeader>
+                  <CardContent>
+                    <ModelSelector />
+                  </CardContent>
+                </Card>
+
+                {/* Quick Tips */}
+                <Card className="bg-muted/30">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm font-medium">Quick Tips</CardTitle>
+                  </CardHeader>
+                  <CardContent className="text-xs text-muted-foreground space-y-2">
+                    <p>
+                      <strong className="text-foreground">Best Quality:</strong> Use GPT-4o Transcribe for highest accuracy
+                    </p>
+                    <p>
+                      <strong className="text-foreground">Speaker ID:</strong> Use GPT-4o Diarize for meeting transcripts with multiple speakers
+                    </p>
+                    <p>
+                      <strong className="text-foreground">Large Files:</strong> Files over 25MB will be automatically split into chunks
+                    </p>
+                    <p>
+                      <strong className="text-foreground">Formats:</strong> Supports MP3, MP4, M4A, WAV, and WebM
+                    </p>
+                  </CardContent>
+                </Card>
+              </div>
+            </div>
+          )}
+        </main>
+      </div>
+
+      {/* Footer */}
+      <footer className="border-t border-border py-4 mt-auto">
+        <div className="container mx-auto px-4 text-center text-xs text-muted-foreground">
+          <p>Meeting Transcriber uses OpenAI's Speech-to-Text API. Your audio is processed securely.</p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+      </footer>
     </div>
   );
 }
