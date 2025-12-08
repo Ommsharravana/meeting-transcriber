@@ -1,10 +1,32 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getServerSession } from 'next-auth';
+import { authOptions } from '@/lib/auth/config';
+import { getUserApiKey } from '@/lib/auth/api-keys';
+import { logUsage } from '@/lib/usage';
 import OpenAI from 'openai';
 
 export async function POST(request: NextRequest) {
   console.log('[API Route] Summarize request received');
 
   try {
+    // Get authenticated user session
+    const session = await getServerSession(authOptions);
+
+    if (!session?.user?.id) {
+      return NextResponse.json(
+        { error: { message: 'Authentication required. Please log in.' } },
+        { status: 401 }
+      );
+    }
+
+    // Check if user account is active
+    if (session.user.status !== 'active') {
+      return NextResponse.json(
+        { error: { message: 'Your account is not active. Please contact an administrator.' } },
+        { status: 403 }
+      );
+    }
+
     // Get the request body
     const body = await request.json();
     const { transcript, type = 'summary' } = body;
@@ -16,15 +38,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    if (!process.env.OPENAI_API_KEY) {
+    // Get user's OpenAI API key from database
+    const apiKey = await getUserApiKey(session.user.id, 'openai');
+
+    if (!apiKey) {
       return NextResponse.json(
-        { error: { message: 'OpenAI API key not configured' } },
-        { status: 500 }
+        { error: { message: 'No OpenAI API key found. Please add your API key in Settings.' } },
+        { status: 400 }
       );
     }
 
     const openai = new OpenAI({
-      apiKey: process.env.OPENAI_API_KEY,
+      apiKey: apiKey,
     });
 
     // Build the prompt based on type
@@ -100,6 +125,14 @@ ${transcript}`;
     const result = completion.choices[0]?.message?.content || 'No summary generated';
 
     console.log('[API Route] OpenAI response received');
+
+    // Log usage
+    await logUsage({
+      userId: session.user.id,
+      action: 'summarize',
+      provider: 'openai',
+      model: 'gpt-4o-mini',
+    });
 
     return NextResponse.json({
       result: result.trim(),

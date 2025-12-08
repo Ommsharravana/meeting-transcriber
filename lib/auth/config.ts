@@ -1,7 +1,7 @@
 import { NextAuthOptions } from 'next-auth';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import bcrypt from 'bcryptjs';
-import { getUsers, findUserByEmail } from './users';
+import { findUserByEmail } from './users';
 
 export const authOptions: NextAuthOptions = {
   secret: process.env.NEXTAUTH_SECRET || 'development-secret-change-in-production',
@@ -29,10 +29,21 @@ export const authOptions: NextAuthOptions = {
           throw new Error('Invalid password');
         }
 
+        // Check account status
+        if (user.status === 'pending') {
+          throw new Error('Your account is pending approval. Please wait for an administrator to approve your account.');
+        }
+
+        if (user.status === 'suspended') {
+          throw new Error('Your account has been suspended. Please contact an administrator.');
+        }
+
         return {
           id: user.id,
           email: user.email,
           name: user.name,
+          role: user.role,
+          status: user.status,
         };
       },
     }),
@@ -49,12 +60,16 @@ export const authOptions: NextAuthOptions = {
     async jwt({ token, user }) {
       if (user) {
         token.id = user.id;
+        token.role = user.role;
+        token.status = user.status;
       }
       return token;
     },
     async session({ session, token }) {
       if (session.user) {
         session.user.id = token.id as string;
+        session.user.role = token.role as 'user' | 'admin' | 'superadmin';
+        session.user.status = token.status as 'pending' | 'active' | 'suspended';
       }
       return session;
     },

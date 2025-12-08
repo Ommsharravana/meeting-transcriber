@@ -28,14 +28,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // Create user with pending status (default)
     const user = await createUser(email, password, name);
 
     return NextResponse.json({
-      message: 'Account created successfully',
+      message: 'Account created successfully. Your account is pending approval by an administrator. You will be able to log in once approved.',
+      pending: true,
       user: {
         id: user.id,
         email: user.email,
         name: user.name,
+        status: user.status,
       },
     });
   } catch (error: any) {

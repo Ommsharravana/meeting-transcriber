@@ -1,0 +1,34 @@
+
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Background circle -->
+  <rect width="512" height="512" rx="102" fill="#0a0a0f"/>
+
+  <!-- Outer glow ring -->
+  <circle cx="256" cy="230" r="140" fill="none" stroke="#6366f1" stroke-width="3" opacity="0.3"/>
+
+  <!-- Microphone body -->
+  <rect x="196" y="100" width="120" height="200" rx="60" fill="#6366f1"/>
+
+  <!-- Microphone grille lines -->
+  <line x1="220" y1="140" x2="292" y2="140" stroke="#0a0a0f" stroke-width="6" stroke-linecap="round" opacity="0.4"/>
+  <line x1="220" y1="170" x2="292" y2="170" stroke="#0a0a0f" stroke-width="6" stroke-linecap="round" opacity="0.4"/>
+  <line x1="220" y1="200" x2="292" y2="200" stroke="#0a0a0f" stroke-width="6" stroke-linecap="round" opacity="0.4"/>
+  <line x1="220" y1="230" x2="292" y2="230" stroke="#0a0a0f" stroke-width="6" stroke-linecap="round" opacity="0.4"/>
+
+  <!-- Microphone stand arc -->
+  <path d="M160 260 C160 340 200 380 256 380 C312 380 352 340 352 260"
+        fill="none" stroke="#6366f1" stroke-width="20" stroke-linecap="round"/>
+
+  <!-- Stand pole -->
+  <line x1="256" y1="380" x2="256" y2="440" stroke="#6366f1" stroke-width="20" stroke-linecap="round"/>
+
+  <!-- Stand base -->
+  <line x1="196" y1="440" x2="316" y2="440" stroke="#6366f1" stroke-width="20" stroke-linecap="round"/>
+
+  <!-- Audio wave indicators (subtle) -->
+  <path d="M100 200 Q90 230 100 260" fill="none" stroke="#6366f1" stroke-width="8" stroke-linecap="round" opacity="0.5"/>
+  <path d="M70 180 Q55 230 70 280" fill="none" stroke="#6366f1" stroke-width="6" stroke-linecap="round" opacity="0.3"/>
+
+  <path d="M412 200 Q422 230 412 260" fill="none" stroke="#6366f1" stroke-width="8" stroke-linecap="round" opacity="0.5"/>
+  <path d="M442 180 Q457 230 442 280" fill="none" stroke="#6366f1" stroke-width="6" stroke-linecap="round" opacity="0.3"/>
+</svg>

@@ -1,10 +1,11 @@
 'use client';
 
-import { AudioLines, Settings, Github, LogOut, User } from 'lucide-react';
+import { AudioLines, Settings, Github, LogOut, User, Shield } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { SettingsDialog } from '@/components/settings/SettingsDialog';
 import { useState } from 'react';
 import { useSession, signOut } from 'next-auth/react';
+import Link from 'next/link';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -90,8 +91,26 @@ export function Header() {
                         <span className="text-xs text-muted-foreground truncate">
                           {session.user.email}
                         </span>
+                        <span className="text-[10px] text-primary capitalize">
+                          {session.user.role}
+                        </span>
                       </div>
                     </DropdownMenuLabel>
+                    <DropdownMenuSeparator />
+                    {(session.user.role === 'admin' || session.user.role === 'superadmin') && (
+                      <DropdownMenuItem asChild className="cursor-pointer">
+                        <Link href="/admin">
+                          <Shield className="w-4 h-4 mr-2" />
+                          Admin Dashboard
+                        </Link>
+                      </DropdownMenuItem>
+                    )}
+                    <DropdownMenuItem asChild className="cursor-pointer">
+                      <Link href="/settings">
+                        <User className="w-4 h-4 mr-2" />
+                        Settings
+                      </Link>
+                    </DropdownMenuItem>
                     <DropdownMenuSeparator />
                     <DropdownMenuItem
                       onClick={() => signOut({ callbackUrl: '/login' })}

@@ -101,7 +101,137 @@ export async function needsChunking(file: File): Promise<{ needs: boolean; durat
 }
 
 /**
+ * Split audio in the browser using Web Audio API
+ * This works on any platform including Vercel without FFmpeg
+ */
+async function splitAudioBrowserSide(
+  file: File,
+  chunkDurationSeconds: number,
+  onProgress?: (progress: number, message: string) => void
+): Promise<Blob[]> {
+  onProgress?.(5, 'Loading audio file...');
+
+  // Get the audio context
+  const audioContext = new (window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext)();
+
+  // Read file as array buffer
+  const arrayBuffer = await file.arrayBuffer();
+  onProgress?.(15, 'Decoding audio...');
+
+  // Decode audio data
+  const audioBuffer = await audioContext.decodeAudioData(arrayBuffer);
+  const sampleRate = audioBuffer.sampleRate;
+  const numberOfChannels = audioBuffer.numberOfChannels;
+  const totalDuration = audioBuffer.duration;
+
+  const numChunks = Math.ceil(totalDuration / chunkDurationSeconds);
+  const chunks: Blob[] = [];
+
+  onProgress?.(25, `Splitting into ${numChunks} chunks...`);
+
+  for (let i = 0; i < numChunks; i++) {
+    const startTime = i * chunkDurationSeconds;
+    const endTime = Math.min((i + 1) * chunkDurationSeconds, totalDuration);
+    const chunkDuration = endTime - startTime;
+
+    // Calculate sample positions
+    const startSample = Math.floor(startTime * sampleRate);
+    const endSample = Math.floor(endTime * sampleRate);
+    const chunkLength = endSample - startSample;
+
+    // Create a new buffer for this chunk
+    const chunkBuffer = audioContext.createBuffer(
+      numberOfChannels,
+      chunkLength,
+      sampleRate
+    );
+
+    // Copy data for each channel
+    for (let channel = 0; channel < numberOfChannels; channel++) {
+      const sourceData = audioBuffer.getChannelData(channel);
+      const destData = chunkBuffer.getChannelData(channel);
+      for (let j = 0; j < chunkLength; j++) {
+        destData[j] = sourceData[startSample + j];
+      }
+    }
+
+    // Convert to WAV blob (WAV is simpler and widely supported)
+    const wavBlob = audioBufferToWav(chunkBuffer);
+    chunks.push(wavBlob);
+
+    const progress = 25 + ((i + 1) / numChunks) * 65;
+    onProgress?.(progress, `Created chunk ${i + 1} of ${numChunks}...`);
+  }
+
+  await audioContext.close();
+  onProgress?.(95, 'Chunking complete!');
+
+  return chunks;
+}
+
+/**
+ * Convert AudioBuffer to WAV Blob
+ */
+function audioBufferToWav(buffer: AudioBuffer): Blob {
+  const numChannels = buffer.numberOfChannels;
+  const sampleRate = buffer.sampleRate;
+  const format = 1; // PCM
+  const bitDepth = 16;
+
+  const bytesPerSample = bitDepth / 8;
+  const blockAlign = numChannels * bytesPerSample;
+
+  // Interleave channels
+  const length = buffer.length * numChannels;
+  const samples = new Int16Array(length);
+
+  for (let i = 0; i < buffer.length; i++) {
+    for (let channel = 0; channel < numChannels; channel++) {
+      const sample = buffer.getChannelData(channel)[i];
+      // Convert float to int16
+      const s = Math.max(-1, Math.min(1, sample));
+      samples[i * numChannels + channel] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+    }
+  }
+
+  const dataLength = samples.length * bytesPerSample;
+  const bufferLength = 44 + dataLength;
+  const arrayBuffer = new ArrayBuffer(bufferLength);
+  const view = new DataView(arrayBuffer);
+
+  // WAV header
+  writeString(view, 0, 'RIFF');
+  view.setUint32(4, bufferLength - 8, true);
+  writeString(view, 8, 'WAVE');
+  writeString(view, 12, 'fmt ');
+  view.setUint32(16, 16, true); // Subchunk1Size
+  view.setUint16(20, format, true);
+  view.setUint16(22, numChannels, true);
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * blockAlign, true);
+  view.setUint16(32, blockAlign, true);
+  view.setUint16(34, bitDepth, true);
+  writeString(view, 36, 'data');
+  view.setUint32(40, dataLength, true);
+
+  // Write samples
+  const offset = 44;
+  for (let i = 0; i < samples.length; i++) {
+    view.setInt16(offset + i * 2, samples[i], true);
+  }
+
+  return new Blob([arrayBuffer], { type: 'audio/wav' });
+}
+
+function writeString(view: DataView, offset: number, string: string): void {
+  for (let i = 0; i < string.length; i++) {
+    view.setUint8(offset + i, string.charCodeAt(i));
+  }
+}
+
+/**
  * Split audio using server-side API (uses native ffmpeg)
+ * Falls back to browser-side if server fails
  */
 async function splitAudioServerSide(
   file: File,
@@ -273,20 +403,22 @@ export async function transcribeWithChunking(
     return transcript;
   }
 
-  // File needs chunking - use server-side splitting
+  // File needs chunking - try browser-side first (works on Vercel), then server-side
   const totalChunks = chunkInfo.estimatedChunks;
+  const CHUNK_DURATION_SECONDS = 600; // 10 minutes
 
   onProgress?.({
     phase: 'chunking',
     overallProgress: 10,
     totalChunks,
-    message: `Splitting audio into ${totalChunks} chunks (server-side)...`,
+    message: `Splitting audio into ${totalChunks} chunks...`,
   });
 
-  // Split the audio using server API
+  // Split the audio - try browser-side first (no FFmpeg needed)
   let chunks: Blob[];
   try {
-    chunks = await splitAudioServerSide(file, (progress, message) => {
+    console.log('[Chunker] Trying browser-side audio splitting...');
+    chunks = await splitAudioBrowserSide(file, CHUNK_DURATION_SECONDS, (progress, message) => {
       onProgress?.({
         phase: 'chunking',
         overallProgress: 10 + (progress / 100) * 20, // 10-30%
@@ -294,12 +426,28 @@ export async function transcribeWithChunking(
         message,
       });
     });
-  } catch (error) {
-    console.error('[Chunker] Server-side splitting failed:', error);
-    throw new Error(
-      `Failed to split audio: ${error instanceof Error ? error.message : 'Unknown error'}. ` +
-      'Make sure ffmpeg is installed on the server.'
-    );
+    console.log('[Chunker] Browser-side splitting succeeded:', chunks.length, 'chunks');
+  } catch (browserError) {
+    console.warn('[Chunker] Browser-side splitting failed, trying server-side:', browserError);
+
+    // Fall back to server-side (requires FFmpeg)
+    try {
+      chunks = await splitAudioServerSide(file, (progress, message) => {
+        onProgress?.({
+          phase: 'chunking',
+          overallProgress: 10 + (progress / 100) * 20,
+          totalChunks,
+          message: message + ' (server)',
+        });
+      });
+      console.log('[Chunker] Server-side splitting succeeded:', chunks.length, 'chunks');
+    } catch (serverError) {
+      console.error('[Chunker] Both splitting methods failed');
+      throw new Error(
+        `Failed to split audio. Browser error: ${browserError instanceof Error ? browserError.message : 'Unknown'}. ` +
+        `Server error: ${serverError instanceof Error ? serverError.message : 'Unknown'}.`
+      );
+    }
   }
 
   // Transcribe each chunk
@@ -317,8 +465,11 @@ export async function transcribeWithChunking(
       message: `Transcribing chunk ${i + 1} of ${chunks.length}...`,
     });
 
+    // Use the actual blob type (WAV for browser-side, MP3 for server-side)
+    const chunkType = chunks[i].type || 'audio/wav';
+    const chunkExt = chunkType.includes('wav') ? 'wav' : 'mp3';
     const chunkTranscript = await transcribeAudio(
-      new File([chunks[i]], `chunk_${i}.mp3`, { type: 'audio/mp3' }),
+      new File([chunks[i]], `chunk_${i}.${chunkExt}`, { type: chunkType }),
       apiKey,
       options,
       (progress) => {
