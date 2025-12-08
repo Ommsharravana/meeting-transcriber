@@ -1,6 +1,6 @@
 'use client';
 
-// Version 2.0 - Browser-side chunking (no FFmpeg required)
+// Version 2.1 - Browser-side byte slicing (no FFmpeg, no Web Audio decode)
 import { transcribeAudio } from '@/lib/openai/transcribe';
 import { transcribeDualModel, DualModelProgress } from '@/lib/openai/dualModelTranscribe';
 import { transcribeWithElevenLabs } from '@/lib/elevenlabs/transcribe';
