@@ -8,11 +8,71 @@ import os from 'os';
 
 const execAsync = promisify(exec);
 
+// Common ffmpeg installation paths on different systems
+const FFMPEG_PATHS = [
+  '/opt/homebrew/bin/ffmpeg',      // macOS Apple Silicon (Homebrew)
+  '/usr/local/bin/ffmpeg',          // macOS Intel (Homebrew) / Linux
+  '/usr/bin/ffmpeg',                // Linux system install
+  'ffmpeg',                          // Fallback to PATH
+];
+
+const FFPROBE_PATHS = [
+  '/opt/homebrew/bin/ffprobe',      // macOS Apple Silicon (Homebrew)
+  '/usr/local/bin/ffprobe',          // macOS Intel (Homebrew) / Linux
+  '/usr/bin/ffprobe',                // Linux system install
+  'ffprobe',                          // Fallback to PATH
+];
+
+// Find working ffmpeg/ffprobe paths
+let ffmpegPath: string | null = null;
+let ffprobePath: string | null = null;
+
+async function findExecutable(paths: string[]): Promise<string | null> {
+  for (const p of paths) {
+    if (p.startsWith('/')) {
+      // Absolute path - check if file exists
+      if (existsSync(p)) {
+        return p;
+      }
+    } else {
+      // Relative/command - try to run it
+      try {
+        await execAsync(`${p} -version`);
+        return p;
+      } catch {
+        // Not found, try next
+      }
+    }
+  }
+  return null;
+}
+
+async function getFFmpegPath(): Promise<string> {
+  if (!ffmpegPath) {
+    ffmpegPath = await findExecutable(FFMPEG_PATHS);
+  }
+  if (!ffmpegPath) {
+    throw new Error('FFmpeg not found. Please install ffmpeg.');
+  }
+  return ffmpegPath;
+}
+
+async function getFFprobePath(): Promise<string> {
+  if (!ffprobePath) {
+    ffprobePath = await findExecutable(FFPROBE_PATHS);
+  }
+  if (!ffprobePath) {
+    throw new Error('FFprobe not found. Please install ffmpeg.');
+  }
+  return ffprobePath;
+}
+
 // Get audio duration using ffprobe
 async function getAudioDuration(filePath: string): Promise<number> {
   try {
+    const ffprobe = await getFFprobePath();
     const { stdout } = await execAsync(
-      `ffprobe -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${filePath}"`
+      `"${ffprobe}" -v error -show_entries format=duration -of default=noprint_wrappers=1:nokey=1 "${filePath}"`
     );
     return parseFloat(stdout.trim());
   } catch (error) {
@@ -27,18 +87,19 @@ async function splitAudio(
   outputDir: string,
   chunkDurationSeconds: number
 ): Promise<string[]> {
+  const ffmpeg = await getFFmpegPath();
   const duration = await getAudioDuration(inputPath);
   const numChunks = Math.ceil(duration / chunkDurationSeconds);
   const chunkPaths: string[] = [];
 
-  console.log(`[Split API] Splitting ${duration}s audio into ${numChunks} chunks`);
+  console.log(`[Split API] Splitting ${duration}s audio into ${numChunks} chunks using ${ffmpeg}`);
 
   for (let i = 0; i < numChunks; i++) {
     const startTime = i * chunkDurationSeconds;
     const outputPath = path.join(outputDir, `chunk_${i}.mp3`);
 
     await execAsync(
-      `ffmpeg -y -i "${inputPath}" -ss ${startTime} -t ${chunkDurationSeconds} -acodec libmp3lame -q:a 2 "${outputPath}"`
+      `"${ffmpeg}" -y -i "${inputPath}" -ss ${startTime} -t ${chunkDurationSeconds} -acodec libmp3lame -q:a 2 "${outputPath}"`
     );
 
     chunkPaths.push(outputPath);
@@ -52,12 +113,13 @@ export async function POST(request: NextRequest) {
   let inputPath = '';
 
   try {
-    // Check if ffmpeg is available
+    // Check if ffmpeg is available (searches common paths)
     try {
-      await execAsync('which ffmpeg');
+      const ffmpegPath = await getFFmpegPath();
+      console.log(`[Split API] Using ffmpeg at: ${ffmpegPath}`);
     } catch {
       return NextResponse.json(
-        { error: 'FFmpeg is not installed on the server' },
+        { error: 'FFmpeg is not installed on the server. Please install ffmpeg via Homebrew: brew install ffmpeg' },
         { status: 500 }
       );
     }
